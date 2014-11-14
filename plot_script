@@ -1,0 +1,5 @@
+set dgrid3d;
+set xlabel "5 Yr Div. Yield %";
+set ylabel "Beta";
+set zlabel "Percent Change";
+splot "5yr_div_%+beta.csv" with pm3d;
