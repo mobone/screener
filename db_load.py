@@ -10,12 +10,13 @@ con = lite.connect('screens.db')
 cur = con.cursor()
 
 def load_to_db(filename):
-
-    csv_dataframe = pd.read_csv(filename)	
+    # get correct tickers and columns to use
+    result = pd.read_sql('Select * from screens where date = \'2014-11-07\'', con)
     
+    csv_dataframe = pd.read_csv(filename)	
     # remove the unnamed column
-    for i in csv_dataframe.columns: 
-        if "Unnamed:" in i: csv_dataframe = csv_dataframe.drop(i, 1)
+    for i in csv_dataframe.columns:
+        if i not in result.columns: csv_dataframe = csv_dataframe.drop(i, 1)
     
     # remove symbos that sql does not like
     formatted_metrics = []
@@ -27,12 +28,15 @@ def load_to_db(filename):
     csv_dataframe = csv_dataframe.where(pd.notnull(csv_dataframe), None)
 
     # set data column to the filename
-    csv_dataframe['Date'] = filename.replace('.csv', '').replace('./','')
+    csv_dataframe['Date'] = filename.replace('.csv', '').replace('./screens/','')
 
+	# only store tickers that are in the sp500
+    csv_dataframe = csv_dataframe[csv_dataframe['Ticker'].isin(result['Ticker'])]
+    
     # send to db
     csv_dataframe.to_sql('screens', con, if_exists='append')
 
-def get_prices(ticker):    
+def get_prices(ticker):
     con = lite.connect('screens.db')
     cur = con.cursor()
     now = datetime.datetime.now()
@@ -57,7 +61,6 @@ def get_prices(ticker):
         print e
 
 def load_prices_to_db():
-    
     result = cur.execute('SELECT ticker from screens group by ticker')
     tickers = result.fetchall()
     tick_count = 0
@@ -67,12 +70,12 @@ def load_prices_to_db():
         print tick_count/float(len(tickers))     
 
 
-csv_files = glob.glob("./*.csv")
-filename = './2014-11-07.csv'
-first_filename = filename
-load_to_db(filename)
-for filename in csv_files:
-    if filename != first_filename:
-        load_to_db(filename)
+try:
+	filename = sys.argv[1]
+	filename = "./screens/" + filename + ".csv"
+	load_to_db(filename)
+except Exception as e:
+	print e
+	
 
 load_prices_to_db()
