@@ -4,6 +4,7 @@ import numpy as np
 import glob,datetime
 from multiprocessing import Process, Queue, Lock, cpu_count
 from time import sleep
+import time
 import sys
 
 con = lite.connect('screens.db')
@@ -61,21 +62,34 @@ def get_prices(ticker):
         print e
 
 def load_prices_to_db():
-    result = cur.execute('SELECT ticker from screens group by ticker')
-    tickers = result.fetchall()
-    tick_count = 0
-    for ticker in tickers:
-        get_prices(ticker[0])
-        tick_count+=1
-        print tick_count/float(len(tickers))     
+    date='2999-10-10'
+    try:
+        result = cur.execute('select Date from price_data order by date desc limit 1')
+        date = result.fetchone()[0]
+    except:
+        print 'Database query failed'
+    now = time.strftime("%Y-%m-%d")
 
+    if date<now:
+        print 'Updating Prices'
+        result = cur.execute('DELETE from price_data')
+        con.commit()
+        result = cur.execute('SELECT ticker from screens group by ticker')
+        tickers = result.fetchall()
+        tick_count = 0
+        for ticker in tickers:
+            get_prices(ticker[0])
+            tick_count+=1
+            print tick_count/float(len(tickers))     
 
-try:
+# loading screen file into db
+if len(sys.argv) > 1:
 	filename = sys.argv[1]
 	filename = "./screens/" + filename + ".csv"
 	load_to_db(filename)
-except Exception as e:
-	print e
-	
 
+
+# method checks if there are new 
+# prices and if there are, delete 
+# the old prices and get new ones
 load_prices_to_db()

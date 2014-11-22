@@ -46,7 +46,7 @@ def worker(metric_list,df, lock, completed_queue):
 			final_df = final_df.join(df['pct change'])
 			corr = final_df.corr()['pct change']['sum {0}'.format(cur_metrics)]
 			
-			if cur_metrics == '5 Yr Div. Yield %+Beta':
+			if 'Beta' in cur_metrics and '5 Yr Div. Yield %' in cur_metrics:
 				print corr
 				final_df = final_df.join(df['Last Close'])
 				final_df.to_csv('best.csv')
@@ -60,21 +60,19 @@ def worker(metric_list,df, lock, completed_queue):
         
 	
 def send_to_db(completed_queue, metric_list):
+
+
+    cur.execute("CREATE TABLE IF NOT EXISTS correlations (file_date TEXT, metric TEXT, correlation REAL);")
+    con.commit()
     cur.execute("DELETE FROM correlations WHERE file_date = {0};".format(filename))
     con.commit()
-
-
     while metric_list.qsize()>0 or completed_queue.qsize()>0:
         item = completed_queue.get()
-        
-        
-        #print "Sending {0} {1}".format(item[0], item[1])
-        
+        print "Sending {0} {1}".format(item[0], item[1])
         cur.execute("INSERT INTO correlations values (\"{0}\",\"{1}\",\"{2}\");".format(filename, item[0], item[1]))
-        
         #print completed_queue.qsize()
         
-    con.commit()    
+    con.commit()
     
 
 def load_correlations(metric_list, date):
@@ -100,6 +98,7 @@ def load_correlations(metric_list, date):
     # set as data frame and start processing with metric queue
     df = result
     
+    # setup queue to send data to db
     completed = Queue()
     
     # start data processors
@@ -119,6 +118,8 @@ def load_correlations(metric_list, date):
 
 depth = 0
 ignore = ['index', 'Ticker', 'Date', 'S&P 500', 'Company Name','Exchange', 'Sector', 'Last Close']
+
+# create a list of metric permutations, non-repeating
 def generate_metric_list(list_of_items, depth, caller):
 	depth += 1
 	slicer = 1
@@ -130,10 +131,11 @@ def generate_metric_list(list_of_items, depth, caller):
 			string = '{0}+{1}'.format(caller,i)
 		final_list.append(string)
 
-		if depth<3:
+		if depth<2:
 			generate_metric_list(list_of_items[slicer:], depth, string)
 			slicer+=1
 
+# get the columns of
 def get_metrics_from_db(filename):
     result = pd.read_sql('Select * from screens where date = \'{0}\''.format(filename), con,  index_col=['Ticker'])
     return result.columns
@@ -142,6 +144,8 @@ def get_metrics_from_db(filename):
 try:
     filename = sys.argv[1]
     initial_metrics = get_metrics_from_db(filename)
+    for metric in initial_metrics:
+        print metric
     final_list = []
     generate_metric_list(initial_metrics, depth, '')
     
