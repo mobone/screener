@@ -6,7 +6,7 @@ from multiprocessing import Process, Queue, Lock, cpu_count
 from time import sleep
 import time
 import sys
-
+import urllib2, urllib
 con = lite.connect('screens.db')
 cur = con.cursor()
 
@@ -37,9 +37,39 @@ def load_to_db(filename):
     # send to db
     csv_dataframe.to_sql('screens', con, if_exists='append')
 
-def get_prices(ticker):
+def get_prices(ticker_queue):
     con = lite.connect('screens.db')
     cur = con.cursor()
+    user_agent = 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'
+    values = {'name' : 'Michael Foord', 'location' : 'Northampton', 'language' : 'Python' }
+    headers = { 'User-Agent' : user_agent }
+    while ticker_queue.qsize()>0:
+        ticker = ticker_queue.get()
+        while True:
+            try:                
+                ticker = ticker.replace('.', '-')
+                print ticker
+                data = urllib.urlencode(values)
+                req = urllib2.Request("http://www.nasdaq.com/symbol/"+ticker+"/historical", data, headers)
+                response = urllib2.urlopen(req)
+                
+                data = response.read()
+                results = pd.read_html(data)
+                
+                results = pd.DataFrame(results[3])
+                results['Ticker'] = ticker
+                results = results.drop('Open', 1)
+                results = results.drop('High', 1)
+                results = results.drop('Low', 1)
+                results = results.drop('Volume', 1)
+                results.to_sql('price_data', con, if_exists='append')
+                print ticker_queue.qsize()/500.0
+                break
+            except Exception as e:
+                print e
+                sleep(1)
+            
+    """
     now = datetime.datetime.now()
     start_month = 7
     start_day = 1
@@ -51,7 +81,7 @@ def get_prices(ticker):
     try:
         url ='http://ichart.yahoo.com/table.csv?s={6}&a={0}&b={1}&c={2}&d={3}&e={4}&f={5}&g=d&ignore=.csv'.format(
                     start_month, start_day, start_year, end_month, end_day, end_year, ticker)
-        price_data = pd.read_csv(url)
+        price_data = pd.read_html(url)
 
         price_data['Ticker'] = np.array(['{0}'.format(ticker)]*len(price_data))
         price_data = price_data[['Date','Ticker','Adj Close']]
@@ -60,7 +90,7 @@ def get_prices(ticker):
         
     except Exception as e:
         print e
-
+    """
 def load_prices_to_db():
     date='2999-10-10'
     try:
@@ -69,18 +99,27 @@ def load_prices_to_db():
     except:
         print 'Database query failed'
     now = time.strftime("%Y-%m-%d")
-
-    if date<now:
+    
+    if date>now or True:
         print 'Updating Prices'
-        result = cur.execute('DELETE from price_data')
-        con.commit()
+        try:
+            result = cur.execute('DELETE from price_data')
+            con.commit()
+        except Exception as e:
+            print e
         result = cur.execute('SELECT ticker from screens group by ticker')
         tickers = result.fetchall()
         tick_count = 0
+        ticker_queue = Queue()
         for ticker in tickers:
-            get_prices(ticker[0])
-            tick_count+=1
-            print tick_count/float(len(tickers))     
+            ticker_queue.put(str(ticker[0]))
+        for i in range(cpu_count()*2):
+            p = Process(target = get_prices, args = (ticker_queue,))
+            p.start()
+        while ticker_queue.qsize()>0:
+            sleep(1)
+        
+            
 
 # loading screen file into db
 if len(sys.argv) > 1:
