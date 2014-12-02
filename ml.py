@@ -3,14 +3,15 @@ import sqlite3 as lite
 import numpy as np
 from sklearn import svm, cross_validation
 from sklearn.ensemble import ExtraTreesClassifier
-
+import matplotlib.pyplot as plt
 
 con = lite.connect('screens.db')
 cur = con.cursor()
 
 def get_data(screen_date, price_date):
-    result = pd.read_sql("Select `Ticker`,`Beta`, `5 Yr Hist. Div. Growth %` from screens where date = '{0}'".format(screen_date), con, index_col=['Ticker'])
-    result = result.rank(pct=True)
+    result = pd.read_sql("Select `Ticker`,`Beta`, `5 Yr Hist. Div. Growth %`,`PEG Ratio`, `Quick Ratio`, `EBITDA `, `% Change LT Growth Est. (4 weeks)` from screens where date = '{0}'".format(screen_date), con, index_col=['Ticker'])
+    #result = pd.read_sql("Select `Ticker`,`Beta`, `5 Yr Hist. Div. Growth %`, `Quick Ratio` from screens where date = '{0}'".format(screen_date), con, index_col=['Ticker'])
+    #result = result.rank(pct=True)
     
     if screen_date == '2014-08-19':
         screen_date = '08/25/2014'
@@ -40,21 +41,20 @@ def get_data(screen_date, price_date):
 
 def get_bins(results, test_data, bins = None):
     if bins is None:
-        bins = np.linspace(test_data['pct change'].min(), test_data['pct change'].max(), 6)
-        
+        bins = np.linspace(test_data['pct change'].min()-.02, test_data['pct change'].max()+.02, 5)
+    print bins
     bin_data = test_data.copy()
     for i in range(1,len(bins)):
-        
         bin_data[(test_data>bins[i-1]) & (test_data<bins[i])] = str(i-1)
     
     bin_data.columns = ['bin']
-    
+    print bin_data
     test_data = test_data.join(bin_data['bin'])
     
     return (test_data, bins)
     
     
-(result, test_data) = get_data('2014-09-24', '10/24/2014')
+(result, test_data) = get_data('2014-08-19', '09/19/2014')
 (test_data, bins) = get_bins(result, test_data)
 
 # fit model
@@ -68,6 +68,26 @@ model.fit(result, test_data['bin'])
 print model.score(result, test_data['bin'])
 #print cross_validation.cross_val_score(model, result, test_data['bin'], scoring='accuracy')
 
+output = []
+for row in result.iterrows():
+    check = []
+    for i in range(len(row[1])):
+        check.append(row[1][i])
+    output.append((model.predict([check])[0], test_data['pct change'][row[0]]))
+    
+output = pd.DataFrame(output)
+output.columns = ['Bin', 'Pct Change']
+
+plt.figure()
+
+bp = output.boxplot(by='Bin')
+
+fig = plt.gcf()
+fig.savefig('output.png')
+groups = output.groupby('Bin')
+print groups.describe()
+
+
 f = open('results.csv', 'w')
 f.write("ticker, input, predicted bin, actual bin, actual pct\n")
 test_sum = 0
@@ -77,3 +97,4 @@ for row in result.iterrows():
         check.append(row[1][i])
     f.write('{0},{1},{2},{3},{4}\n'.format( row[0], str(check), \
      model.predict([check])[0], test_data['bin'][row[0]], test_data['pct change'][row[0]]))
+
