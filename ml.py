@@ -61,6 +61,10 @@ def get_bins(results, test_data, bins = None):
 model = svm.SVC()
 model.fit(result, test_data['bin']) 
 
+# save model to file
+import pickle
+s = pickle.dumps(model)
+
 # test model
 (result, test_data) = get_data('2014-11-07', '11/25/2014')
 (test_data, bins) = get_bins(result, test_data, bins)
